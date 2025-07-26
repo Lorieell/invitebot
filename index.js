@@ -259,11 +259,16 @@ async function handleResetCommand(interaction) {
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Add root route to handle GET /
+app.get('/', (req, res) => {
+  res.status(200).json({ message: 'Bot is alive' });
+});
+
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Bot is running' });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Express server running on port ${PORT}`);
 });
 
