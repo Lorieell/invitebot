@@ -1,0 +1,19 @@
+{
+  "name": "discord-invite-bot",
+  "version": "1.0.0",
+  "description": "A Discord bot to track invites and display leaderboards",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.1"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Your Name",
+  "license": "MIT"
+}
