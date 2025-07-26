@@ -60,17 +60,21 @@ client.once('ready', async () => {
   for (const guild of client.guilds.cache.values()) {
     try {
       const invites = await guild.invites.fetch();
-      invitesCache.set(guild.id, new Map(invites.map(inv => [inv.code, inv.uses])));
-      console.log(`Cached ${invites.size} invites for ${guild.name}`);
-
+      console.log(`Fetched ${invites.size} existing invites for ${guild.name}`);
+      
+      // Store invite usage counts in cache
+      invitesCache.set(guild.id, new Map(invites.map(inv => [inv.code, inv.uses || 0])));
+      
       // Initialize invite counts from existing invites
       invites.forEach(invite => {
-        if (invite.inviter && invite.uses > 0) {
-          const inviterId = invite.inviter.id;
+        if (invite.inviterId && invite.uses > 0) {
+          const inviterId = invite.inviterId;
           const guildKey = `${guild.id}-${inviterId}`;
           const currentCount = inviteCounts.get(guildKey) || 0;
           inviteCounts.set(guildKey, currentCount + invite.uses);
-          console.log(`Initialized ${invite.uses} invites for ${invite.inviter.tag} in ${guild.name}`);
+          console.log(`Initialized ${invite.uses} invites for user ID ${inviterId} in ${guild.name}`);
+        } else {
+          console.log(`Skipped invite ${invite.code} in ${guild.name}: no inviter or no uses (uses: ${invite.uses})`);
         }
       });
     } catch (error) {
