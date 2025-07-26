@@ -45,15 +45,31 @@ client.once('ready', async () => {
   
   try {
     console.log('Started refreshing application (/) commands.');
-    
+    console.log('Commands to register:', commands.map(cmd => cmd.name));
+
+    // Register commands globally
     await rest.put(
       Routes.applicationCommands(client.user.id),
       { body: commands },
     );
     
-    console.log('Successfully reloaded application (/) commands.');
+    console.log('Successfully reloaded global application (/) commands.');
+
+    // Optionally register commands for a specific guild for faster updates
+    const guildId = process.env.GUILD_ID;
+    if (guildId) {
+      try {
+        await rest.put(
+          Routes.applicationGuildCommands(client.user.id, guildId),
+          { body: commands },
+        );
+        console.log(`Successfully reloaded guild-specific commands for guild ${guildId}.`);
+      } catch (guildError) {
+        console.error(`Error registering guild-specific commands for guild ${guildId}:`, guildError.message, guildError.stack);
+      }
+    }
   } catch (error) {
-    console.error('Error registering slash commands:', error.message, error.stack);
+    console.error('Error registering global slash commands:', error.message, error.stack);
   }
   
   // Cache existing invites and initialize counts
@@ -137,7 +153,13 @@ const commands = [
   new SlashCommandBuilder()
     .setName('invite')
     .setDescription('Check your current invite count'),
-  
+  new SlashCommandBuilder()
+    .setName('checkinvites')
+    .setDescription('Check the invite count of a user by their User ID')
+    .addStringOption(option =>
+      option.setName('user_id')
+        .setDescription('The User ID of the member to check')
+        .setRequired(true)),
   new SlashCommandBuilder()
     .setName('resetinvites')
     .setDescription('Reset all invite counts (Admin only)')
@@ -154,6 +176,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
     switch (commandName) {
       case 'invite':
         await handleInviteCommand(interaction);
+        break;
+      case 'checkinvites':
+        await handleCheckInvitesCommand(interaction);
         break;
       case 'resetinvites':
         await handleResetCommand(interaction);
@@ -194,6 +219,77 @@ async function handleInviteCommand(interaction) {
     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
     .setFooter({ 
       text: 'Keep inviting friends to grow the community!',
+      iconURL: interaction.guild.iconURL({ dynamic: true })
+    })
+    .setTimestamp();
+
+  await interaction.reply({
+    embeds: [embed],
+    ephemeral: true
+  });
+
+  // Auto-delete after 5 minutes (300 seconds)
+  setTimeout(async () => {
+    try {
+      await interaction.deleteReply();
+    } catch (error) {
+      // Reply might already be deleted or expired
+    }
+  }, 300000);
+}
+
+async function handleCheckInvitesCommand(interaction) {
+  const targetUserId = interaction.options.getString('user_id');
+  const guildId = interaction.guildId;
+  let totalInvites = 0;
+
+  // Validate User ID format (basic check for Discord ID)
+  if (!/^\d{17,19}$/.test(targetUserId)) {
+    const embed = new EmbedBuilder()
+      .setColor(0xff6b6b)
+      .setTitle('❌ Invalid User ID')
+      .setDescription('Please provide a valid Discord User ID (17-19 digits).')
+      .setTimestamp();
+    
+    await interaction.reply({
+      embeds: [embed],
+      ephemeral: true
+    });
+    
+    // Auto-delete after 5 minutes
+    setTimeout(async () => {
+      try {
+        await interaction.deleteReply();
+      } catch (error) {
+        // Reply might already be deleted or expired
+      }
+    }, 300000);
+    
+    return;
+  }
+
+  // Sum all invite counts for the target user in this guild
+  for (const [key, count] of inviteCounts) {
+    if (key.startsWith(`${guildId}-${targetUserId}`)) {
+      totalInvites += count;
+    }
+  }
+
+  // Try to fetch the user to get their tag and avatar
+  let targetUser;
+  try {
+    targetUser = await client.users.fetch(targetUserId);
+  } catch (error) {
+    console.error(`Error fetching user ${targetUserId}:`, error.message);
+  }
+
+  const embed = new EmbedBuilder()
+    .setColor(0x00ff99)
+    .setTitle(`📨 Invite Count for ${targetUser ? targetUser.tag : `User ID ${targetUserId}`}`)
+    .setDescription(`${targetUser ? `**${targetUser.tag}** has` : `User ID **${targetUserId}** has`} **${totalInvites}** successful invite${totalInvites !== 1 ? 's' : ''} on this server!`)
+    .setThumbnail(targetUser ? targetUser.displayAvatarURL({ dynamic: true }) : null)
+    .setFooter({ 
+      text: 'Invite tracking by InviteBot',
       iconURL: interaction.guild.iconURL({ dynamic: true })
     })
     .setTimestamp();
