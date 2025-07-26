@@ -16,8 +16,8 @@ import express from 'express';
 dotenv.config();
 
 // Validate Discord token
-if (!process.env.TOKEN) {
-  console.error('❌ Error: DISCORD_TOKEN is not set in the .env file');
+if (!process.env.DISCORD_TOKEN) {
+  console.error('❌ Error: DISCORD_TOKEN is not set in the environment variables');
   process.exit(1);
 }
 
@@ -41,7 +41,7 @@ client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   
   // Register slash commands
-  const rest = new REST().setToken(process.env.TOKEN);
+  const rest = new REST().setToken(process.env.DISCORD_TOKEN);
   
   try {
     console.log('Started refreshing application (/) commands.');
@@ -276,7 +276,7 @@ process.on('unhandledRejection', error => {
   console.error('Unhandled promise rejection:', error.message, error.stack);
 });
 
-client.login(process.env.TOKEN).catch(error => {
+client.login(process.env.DISCORD_TOKEN).catch(error => {
   console.error('Failed to login to Discord:', error.message, error.stack);
   process.exit(1);
 });
