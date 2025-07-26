@@ -174,13 +174,19 @@ client.on(Events.InteractionCreate, async (interaction) => {
 async function handleInviteCommand(interaction) {
   const userId = interaction.user.id;
   const guildId = interaction.guildId;
-  const guildKey = `${guildId}-${userId}`;
-  const count = inviteCounts.get(guildKey) || 0;
+  let totalInvites = 0;
+
+  // Sum all invite counts for the user in this guild
+  for (const [key, count] of inviteCounts) {
+    if (key.startsWith(`${guildId}-${userId}`)) {
+      totalInvites += count;
+    }
+  }
 
   const embed = new EmbedBuilder()
     .setColor(0x00ff99)
     .setTitle('📨 Your Invite Count')
-    .setDescription(`You have **${count}** successful invite${count !== 1 ? 's' : ''} on this server!`)
+    .setDescription(`You have **${totalInvites}** successful invite${totalInvites !== 1 ? 's' : ''} on this server!`)
     .setThumbnail(interaction.user.displayAvatarURL({ dynamic: true }))
     .setFooter({ 
       text: 'Keep inviting friends to grow the community!',
@@ -193,14 +199,14 @@ async function handleInviteCommand(interaction) {
     ephemeral: true
   });
 
-  // Auto-delete after 60 seconds
+  // Auto-delete after 5 minutes (300 seconds)
   setTimeout(async () => {
     try {
       await interaction.deleteReply();
     } catch (error) {
       // Reply might already be deleted or expired
     }
-  }, 60000);
+  }, 300000);
 }
 
 async function handleResetCommand(interaction) {
@@ -258,6 +264,11 @@ async function handleResetCommand(interaction) {
 // Initialize Express server
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// Add root route to handle GET /
+app.get('/', (req, res) => {
+  res.status(200).json({ message: 'Bot is alive' });
+});
 
 app.get('/health', (req, res) => {
   res.status(200).json({ status: 'OK', message: 'Bot is running' });
