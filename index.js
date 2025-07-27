@@ -136,7 +136,17 @@ client.once('ready', async () => {
 
         let bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
         
-        // If /bump not found in guild commands, try global commands
+        // If /bump not found, try again after a delay
+        if (!bumpCommand) {
+          console.log(`Retrying guild commands fetch after 5 seconds for Disboard (${DISBOARD_BOT_ID})`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+          commands = await guild.commands.fetch();
+          bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
+          console.log(`Retry fetched ${commands.size} guild commands:`, 
+            commands.map(cmd => `${cmd.name} (app: ${cmd.applicationId})`));
+        }
+
+        // If still not found, try global commands
         if (!bumpCommand) {
           console.log(`Trying to fetch global commands for Disboard (${DISBOARD_BOT_ID})`);
           const globalCommands = await rest.get(Routes.applicationCommands(DISBOARD_BOT_ID)).catch(err => {
@@ -503,7 +513,17 @@ async function handleForceBumpCommand(interaction) {
 
     let bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
     
-    // If /bump not found in guild commands, try global commands
+    // If /bump not found, try again after a delay
+    if (!bumpCommand) {
+      console.log(`[forcebump] Retrying guild commands fetch after 5 seconds for Disboard (${DISBOARD_BOT_ID})`);
+      await new Promise(resolve => setTimeout(resolve, 5000));
+      commands = await guild.commands.fetch();
+      bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
+      console.log(`[forcebump] Retry fetched ${commands.size} guild commands:`, 
+        commands.map(cmd => `${cmd.name} (app: ${cmd.applicationId})`));
+    }
+
+    // If still not found, try global commands
     if (!bumpCommand) {
       console.log(`[forcebump] Trying to fetch global commands for Disboard (${DISBOARD_BOT_ID})`);
       const globalCommands = await rest.get(Routes.applicationCommands(DISBOARD_BOT_ID)).catch(err => {
