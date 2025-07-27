@@ -121,39 +121,57 @@ client.once('ready', async () => {
 
     const sendBumpCommand = async () => {
       try {
+        // Check bot permissions in the channel
+        const botMember = guild.members.me;
+        const permissions = bumpChannel.permissionsFor(botMember);
+        if (!permissions.has([PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.UseApplicationCommands])) {
+          console.error(`❌ Error: Missing permissions in channel ${BUMP_CHANNEL_ID}: SendMessages=${permissions.has(PermissionsBitField.Flags.SendMessages)}, UseApplicationCommands=${permissions.has(PermissionsBitField.Flags.UseApplicationCommands)}`);
+          return;
+        }
+
         // Fetch guild commands to find Disboard's /bump
-        const commands = await guild.commands.fetch();
-        console.log(`Fetched ${commands.size} commands for guild ${guild.name}:`, 
+        let commands = await guild.commands.fetch();
+        console.log(`Fetched ${commands.size} guild commands for ${guild.name}:`, 
           commands.map(cmd => `${cmd.name} (app: ${cmd.applicationId})`));
 
-        const bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
-        if (bumpCommand) {
-          // Send the /bump command via REST
-          await rest.post(Routes.interaction(guild.id), {
-            body: {
-              type: 2, // Application Command
-              application_id: DISBOARD_BOT_ID,
-              channel_id: BUMP_CHANNEL_ID,
-              guild_id: guild.id,
-              data: {
-                id: bumpCommand.id,
-                name: 'bump',
-                type: 1 // Slash command
-              },
-              nonce: Date.now().toString(),
-              session_id: client.sessionId
-            }
+        let bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
+        
+        // If /bump not found in guild commands, try global commands
+        if (!bumpCommand) {
+          console.log(`Trying to fetch global commands for Disboard (${DISBOARD_BOT_ID})`);
+          const globalCommands = await rest.get(Routes.applicationCommands(DISBOARD_BOT_ID)).catch(err => {
+            console.error(`Failed to fetch global commands for Disboard:`, err.message);
+            return [];
           });
-          console.log(`✅ Successfully sent /bump in channel ${BUMP_CHANNEL_ID} for guild ${guild.name}`);
-        } else {
-          console.error(`❌ Error: /bump command not found for Disboard in guild ${guild.name}`);
-          // Fallback to sending !d bump
-          console.log(`Attempting fallback: sending !d bump in channel ${BUMP_CHANNEL_ID}`);
-          await bumpChannel.send('!d bump');
-          console.log(`✅ Sent !d bump as fallback in channel ${BUMP_CHANNEL_ID}`);
+          bumpCommand = globalCommands.find(cmd => cmd.name === 'bump');
+          console.log(`Fetched ${globalCommands.length} global commands for Disboard:`, 
+            globalCommands.map(cmd => cmd.name));
         }
+
+        if (!bumpCommand) {
+          console.error(`❌ Error: /bump command not found for Disboard in guild ${guild.name}`);
+          return;
+        }
+
+        // Send the /bump command via REST
+        await rest.post(Routes.interaction(guild.id), {
+          body: {
+            type: 2, // Application Command
+            application_id: DISBOARD_BOT_ID,
+            channel_id: BUMP_CHANNEL_ID,
+            guild_id: guild.id,
+            data: {
+              id: bumpCommand.id,
+              name: 'bump',
+              type: 1 // Slash command
+            },
+            nonce: Date.now().toString(),
+            session_id: client.sessionId
+          }
+        });
+        console.log(`✅ Successfully sent /bump in channel ${BUMP_CHANNEL_ID} for guild ${guild.name}`);
       } catch (error) {
-        console.error(`❌ Error sending /bump or !d bump in channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
+        console.error(`❌ Error sending /bump in channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
       }
     };
 
@@ -230,6 +248,10 @@ const commands = [
   new SlashCommandBuilder()
     .setName('resetinvites')
     .setDescription('Reset all invite counts (Admin only)')
+    .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator),
+  new SlashCommandBuilder()
+    .setName('forcebump')
+    .setDescription('Manually trigger Disboard /bump (Admin only)')
     .setDefaultMemberPermissions(PermissionsBitField.Flags.Administrator)
 ];
 
@@ -249,6 +271,9 @@ client.on(Events.InteractionCreate, async (interaction) => {
         break;
       case 'resetinvites':
         await handleResetCommand(interaction);
+        break;
+      case 'forcebump':
+        await handleForceBumpCommand(interaction);
         break;
     }
   } catch (error) {
@@ -426,6 +451,106 @@ async function handleResetCommand(interaction) {
   });
   
   console.log(`Invite counts reset for guild ${interaction.guild.name} by ${interaction.user.tag}`);
+}
+
+async function handleForceBumpCommand(interaction) {
+  // Check for administrator permissions
+  if (!interaction.member.permissions.has(PermissionsBitField.Flags.Administrator)) {
+    await interaction.reply({
+      content: '❌ You need Administrator permissions to use this command.',
+      ephemeral: true
+    });
+    return;
+  }
+
+  const rest = new REST().setToken(process.env.DISCORD_TOKEN);
+  try {
+    const guild = interaction.guild;
+    const bumpChannel = await client.channels.fetch(BUMP_CHANNEL_ID);
+    if (!bumpChannel || !bumpChannel.isTextBased()) {
+      await interaction.reply({
+        content: `❌ Error: Channel ${BUMP_CHANNEL_ID} not found or not a text channel`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Check bot permissions in the channel
+    const botMember = guild.members.me;
+    const permissions = bumpChannel.permissionsFor(botMember);
+    if (!permissions.has([PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.UseApplicationCommands])) {
+      await interaction.reply({
+        content: `❌ Error: Missing permissions in channel ${BUMP_CHANNEL_ID}: SendMessages=${permissions.has(PermissionsBitField.Flags.SendMessages)}, UseApplicationCommands=${permissions.has(PermissionsBitField.Flags.UseApplicationCommands)}`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Check if Disboard is in the guild
+    const disboardMember = await guild.members.fetch(DISBOARD_BOT_ID).catch(() => null);
+    if (!disboardMember) {
+      await interaction.reply({
+        content: `❌ Error: Disboard bot (${DISBOARD_BOT_ID}) not found in guild ${guild.name}`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Fetch guild commands to find Disboard's /bump
+    let commands = await guild.commands.fetch();
+    console.log(`[forcebump] Fetched ${commands.size} guild commands for ${guild.name}:`, 
+      commands.map(cmd => `${cmd.name} (app: ${cmd.applicationId})`));
+
+    let bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
+    
+    // If /bump not found in guild commands, try global commands
+    if (!bumpCommand) {
+      console.log(`[forcebump] Trying to fetch global commands for Disboard (${DISBOARD_BOT_ID})`);
+      const globalCommands = await rest.get(Routes.applicationCommands(DISBOARD_BOT_ID)).catch(err => {
+        console.error(`[forcebump] Failed to fetch global commands for Disboard:`, err.message);
+        return [];
+      });
+      bumpCommand = globalCommands.find(cmd => cmd.name === 'bump');
+      console.log(`[forcebump] Fetched ${globalCommands.length} global commands for Disboard:`, 
+        globalCommands.map(cmd => cmd.name));
+    }
+
+    if (!bumpCommand) {
+      await interaction.reply({
+        content: `❌ Error: /bump command not found for Disboard in guild ${guild.name}`,
+        ephemeral: true
+      });
+      return;
+    }
+
+    // Send the /bump command via REST
+    await rest.post(Routes.interaction(guild.id), {
+      body: {
+        type: 2, // Application Command
+        application_id: DISBOARD_BOT_ID,
+        channel_id: BUMP_CHANNEL_ID,
+        guild_id: guild.id,
+        data: {
+          id: bumpCommand.id,
+          name: 'bump',
+          type: 1 // Slash command
+        },
+        nonce: Date.now().toString(),
+        session_id: client.sessionId
+      }
+    });
+
+    await interaction.reply({
+      content: `✅ Successfully sent /bump in channel <#${BUMP_CHANNEL_ID}>`,
+      ephemeral: true
+    });
+  } catch (error) {
+    console.error(`[forcebump] Error sending /bump in channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
+    await interaction.reply({
+      content: `❌ Error sending /bump: ${error.message}`,
+      ephemeral: true
+    });
+  }
 }
 
 // Initialize Express server
