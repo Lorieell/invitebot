@@ -111,38 +111,49 @@ client.once('ready', async () => {
       return;
     }
 
+    const guild = bumpChannel.guild;
+    // Check if Disboard is in the guild
+    const disboardMember = await guild.members.fetch(DISBOARD_BOT_ID).catch(() => null);
+    if (!disboardMember) {
+      console.error(`❌ Error: Disboard bot (${DISBOARD_BOT_ID}) not found in guild ${guild.name}`);
+      return;
+    }
+
     const sendBumpCommand = async () => {
       try {
         // Fetch guild commands to find Disboard's /bump
-        const guild = bumpChannel.guild;
         const commands = await guild.commands.fetch();
+        console.log(`Fetched ${commands.size} commands for guild ${guild.name}:`, 
+          commands.map(cmd => `${cmd.name} (app: ${cmd.applicationId})`));
+
         const bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
-
-        if (!bumpCommand) {
+        if (bumpCommand) {
+          // Send the /bump command via REST
+          await rest.post(Routes.interaction(guild.id), {
+            body: {
+              type: 2, // Application Command
+              application_id: DISBOARD_BOT_ID,
+              channel_id: BUMP_CHANNEL_ID,
+              guild_id: guild.id,
+              data: {
+                id: bumpCommand.id,
+                name: 'bump',
+                type: 1 // Slash command
+              },
+              nonce: Date.now().toString(),
+              session_id: client.sessionId
+            }
+          });
+          console.log(`✅ Successfully sent /bump in channel ${BUMP_CHANNEL_ID} for guild ${guild.name}`);
+        } else {
           console.error(`❌ Error: /bump command not found for Disboard in guild ${guild.name}`);
-          return;
+          // Fallback to sending !d bump
+          console.log(`Attempting fallback: sending !d bump in channel ${BUMP_CHANNEL_ID}`);
+          await bumpChannel.send('!d bump');
+          console.log(`✅ Sent !d bump as fallback in channel ${BUMP_CHANNEL_ID}`);
         }
-
-        // Send the /bump command
-        await rest.post(Routes.interaction(guild.id), {
-          body: {
-            type: 2, // Application Command
-            application_id: DISBOARD_BOT_ID,
-            channel_id: BUMP_CHANNEL_ID,
-            guild_id: guild.id,
-            data: {
-              id: bumpCommand.id,
-              name: 'bump',
-              type: 1 // Slash command
-            },
-            nonce: Date.now().toString(),
-            session_id: client.sessionId
-          }
-        });
-
-        console.log(`✅ Successfully sent /bump in channel ${BUMP_CHANNEL_ID} for guild ${guild.name}`);
       } catch (error) {
-        console.error(`❌ Error sending /bump in channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
+        console.error(`❌ Error sending /bump or !d bump in channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
       }
     };
 
