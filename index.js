@@ -37,6 +37,11 @@ const inviteCounts = new Map(); // Tracks invite counts per user per guild
 const userInviter = new Map(); // Maps invited members to their inviters
 const invitesCache = new Map(); // Caches invite usage counts
 
+// Disboard configuration
+const DISBOARD_BOT_ID = '302050872383242240'; // Disboard bot ID
+const BUMP_CHANNEL_ID = '1392757104405909515'; // Channel ID for sending /bump
+const BUMP_INTERVAL = 2 * 60 * 60 * 1000; // 2 hours in milliseconds
+
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   
@@ -96,6 +101,57 @@ client.once('ready', async () => {
     } catch (error) {
       console.error(`Could not fetch invites for ${guild.name}:`, error.message, error.stack);
     }
+  }
+
+  // Set up automatic /bump command for Disboard
+  try {
+    const bumpChannel = await client.channels.fetch(BUMP_CHANNEL_ID);
+    if (!bumpChannel || !bumpChannel.isTextBased()) {
+      console.error(`❌ Error: Channel ${BUMP_CHANNEL_ID} not found or not a text channel`);
+      return;
+    }
+
+    const sendBumpCommand = async () => {
+      try {
+        // Fetch guild commands to find Disboard's /bump
+        const guild = bumpChannel.guild;
+        const commands = await guild.commands.fetch();
+        const bumpCommand = commands.find(cmd => cmd.name === 'bump' && cmd.applicationId === DISBOARD_BOT_ID);
+
+        if (!bumpCommand) {
+          console.error(`❌ Error: /bump command not found for Disboard in guild ${guild.name}`);
+          return;
+        }
+
+        // Send the /bump command
+        await rest.post(Routes.interaction(guild.id), {
+          body: {
+            type: 2, // Application Command
+            application_id: DISBOARD_BOT_ID,
+            channel_id: BUMP_CHANNEL_ID,
+            guild_id: guild.id,
+            data: {
+              id: bumpCommand.id,
+              name: 'bump',
+              type: 1 // Slash command
+            },
+            nonce: Date.now().toString(),
+            session_id: client.sessionId
+          }
+        });
+
+        console.log(`✅ Successfully sent /bump in channel ${BUMP_CHANNEL_ID} for guild ${guild.name}`);
+      } catch (error) {
+        console.error(`❌ Error sending /bump in channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
+      }
+    };
+
+    // Send /bump immediately and then every 2 hours
+    await sendBumpCommand();
+    setInterval(sendBumpCommand, BUMP_INTERVAL);
+    console.log(`🕒 Automatic /bump scheduled every ${BUMP_INTERVAL / 1000 / 60} minutes in channel ${BUMP_CHANNEL_ID}`);
+  } catch (error) {
+    console.error(`❌ Error setting up automatic /bump for channel ${BUMP_CHANNEL_ID}:`, error.message, error.stack);
   }
 });
 
